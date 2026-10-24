@@ -6,46 +6,38 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "node scripts/run-framework.mjs dev",
-    "build": "node scripts/run-framework.mjs build",
-    "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate-db.mjs",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/qa-pms.test.mjs tests/qa-api.test.mjs tests/qa-calendar.test.mjs tests/qa-booking-reference.test.mjs tests/qa-booking-display.test.mjs tests/qa-operations.test.mjs tests/qa-payment-followups.test.mjs tests/qa-invoice-display.test.mjs",
-    "test:api": "node --test tests/qa-api.test.mjs"
+    "test": "node --test tests/qa-pms.test.mjs tests/qa-api.test.mjs tests/qa-calendar.test.mjs tests/qa-booking-reference.test.mjs tests/qa-booking-display.test.mjs tests/qa-operations.test.mjs tests/qa-payment-followups.test.mjs tests/qa-invoice-display.test.mjs tests/qa-auth.test.mjs tests/qa-postgres.test.mjs",
+    "test:api": "node --test tests/qa-api.test.mjs",
+    "test:postgres": "node --test tests/qa-postgres.test.mjs"
   },
   "dependencies": {
+    "@neondatabase/auth": "0.6.0-beta",
+    "@neondatabase/serverless": "1.0.2",
     "clsx": "2.1.1",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.31.0",
     "next": "16.3.4",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "server-only": "0.0.1",
     "tailwind-merge": "3.6.0",
+    "ws": "8.18.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@cloudflare/workers-types": "4.20260515.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
+    "@types/ws": "8.18.1",
     "drizzle-kit": "0.31.10",
-    "json-rpc-2.0": "1.7.1",
-    "raw-body": "3.0.2",
-    "react-server-dom-webpack": "19.2.6",
-    "typescript": "5.9.3",
-    "vinext": "1.0.0-beta.5",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "typescript": "5.9.3"
   },
   "type": "module",
-  "overrides": {
-    "miniflare": {
-      "sharp": "0.35.4"
-    }
-  },
   "packageManager": "pnpm@11.25.0"
 }

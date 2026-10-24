@@ -1,0 +1,8 @@
+.env*
+.vercel
+.agents
+.codex
+.git
+work
+outputs
+*.tsbuildinfo

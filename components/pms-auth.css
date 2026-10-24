@@ -1,0 +1,17 @@
+.auth-page{width:100%;max-width:560px;overflow-wrap:anywhere}
+.auth-page h1{font-size:34px;line-height:1.15;margin-top:12px}
+.auth-tabs{display:flex;gap:8px;margin:24px 0 18px}
+.auth-form{display:grid;gap:17px;text-align:left;margin-top:20px}
+.auth-form .field{min-width:0}
+.auth-form .field small{color:var(--muted);font-size:12px;line-height:1.5}
+.auth-form input{font-size:16px!important;min-height:44px}
+.auth-form .btn{min-height:44px}
+.auth-secondary{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:20px 0}
+.auth-secondary .link-button{min-height:40px}
+.auth-help{font-size:12px!important;line-height:1.65!important;color:var(--muted);margin:16px 0!important}
+.auth-page .notice{margin:16px 0;text-align:left;white-space:normal;line-height:1.6}
+.auth-actions{margin:24px 0}
+.auth-inline-error{font-size:12px;line-height:1.5;color:var(--red);margin:8px 0;white-space:normal}
+.sidebar .auth-inline-error{color:#ffb9ae;padding:0 12px}
+.auth-home{display:inline-block;font-size:12px;margin-top:22px;padding:10px 0}
+@media(max-width:600px){.auth-page{padding:28px 20px!important}.auth-page h1{font-size:30px}.auth-tabs .btn{flex:1}.auth-actions .btn{min-height:44px}.auth-secondary{gap:10px 18px}}

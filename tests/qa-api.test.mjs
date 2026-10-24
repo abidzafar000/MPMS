@@ -15,24 +15,37 @@ const requestUrl = moduleUrl(withZod(compile(await readFile(new URL("../lib/pms-
 const { requestSchema, buildPmsRequest } = await import(requestUrl);
 
 // Run the application's real POST handler and request contract in memory. Auth
-// and D1 are explicit stubs: these tests verify routing/validation, not hosted
+// and persistence are explicit stubs: these tests verify routing/validation, not hosted
 // authentication or database persistence.
 const actor = { userId: "contract-owner", email: "owner@contract.test", displayName: "Contract Owner" };
-const authUrl = moduleUrl(`export let user = ${JSON.stringify(actor)}; export const setUser = value => { user = value; }; export async function getChatGPTUser() { return user; }`);
+process.env.NEON_AUTH_BASE_URL = "https://auth.contract.test";
+process.env.NEON_AUTH_COOKIE_SECRET = "contract-tests-only-cookie-secret-32-characters";
+const sdkUrl = moduleUrl(`
+  let result = { data: null, error: null };
+  export let sessionOptions;
+  export function setUser(user) { result = { data: user ? { user: { id: user.userId, email: user.email, name: user.displayName, emailVerified: true }, session: { id: 'contract-session', userId: user.userId, expiresAt: new Date(Date.now() + 3600000).toISOString() } } : null, error: null }; }
+  export function setResult(value) { result = value; }
+  export function createNeonAuth() { return { async getSession(options) { sessionOptions = options; return result; } }; }
+`);
+const identityUrl = moduleUrl(withZod(compile(await readFile(new URL("../lib/pms-identity.ts", import.meta.url), "utf8"))));
+const authUrl = moduleUrl(compile(await readFile(new URL("../lib/auth.ts", import.meta.url), "utf8"))
+  .replace(/import ["']server-only["'];?/g, "")
+  .replace(/from ["']@neondatabase\/auth\/next\/server["']/g, `from ${JSON.stringify(sdkUrl)}`)
+  .replace(/from ["']\.\/pms-identity["']/g, `from ${JSON.stringify(identityUrl)}`));
 const serverUrl = moduleUrl(`
   export const calls = [];
   export async function createProperty(actor, payload) { calls.push({ kind: "create", actor, payload }); return { state: { property: { id: "contract-property", name: payload.name } }, version: 0 }; }
   export async function mutatePms(actor, propertyId, version, action, payload) { calls.push({ kind: "mutate", actor, propertyId, version, action, payload }); return { state: { property: { id: propertyId } }, version: version + 1 }; }
-  export async function readPms() { throw new Error("Unexpected read in request-contract test"); }
+  export async function readPms(actor, propertyId) { calls.push({ kind: "read", actor, propertyId }); return { user: actor, properties: [], state: null, version: null }; }
 `);
-const auth = await import(authUrl);
+const auth = await import(sdkUrl);
 const server = await import(serverUrl);
 const routeCode = withZod(compile(await readFile(new URL("../app/api/pms/route.ts", import.meta.url), "utf8")))
-  .replace(/from ["']\.\.\/\.\.\/chatgpt-auth["']/g, `from ${JSON.stringify(authUrl)}`)
+  .replace(/from ["']\.\.\/\.\.\/\.\.\/lib\/auth["']/g, `from ${JSON.stringify(authUrl)}`)
   .replace(/from ["']\.\.\/\.\.\/\.\.\/lib\/pms-engine["']/g, `from ${JSON.stringify(engineUrl)}`)
   .replace(/from ["']\.\.\/\.\.\/\.\.\/lib\/server-pms["']/g, `from ${JSON.stringify(serverUrl)}`)
   .replace(/from ["']\.\.\/\.\.\/\.\.\/lib\/pms-request["']/g, `from ${JSON.stringify(requestUrl)}`);
-const { POST } = await import(moduleUrl(routeCode));
+const { GET, POST } = await import(moduleUrl(routeCode));
 const emptyResponse = {
   user: actor, properties: [], state: null, version: null, role: null, permissions: [],
 };
@@ -112,6 +125,40 @@ test("real POST handler still blocks unauthenticated creation, bad mutation vers
 
 const base = process.env.PMS_QA_BASE_URL;
 
+test("real session helper rejects forged Sites identity headers on both API methods", async () => {
+  reset(); auth.setUser(null);
+  const forged = { "oai-authenticated-user-id": actor.userId, "oai-authenticated-user-email": actor.email, "oai-authenticated-user-full-name": "Forged Owner" };
+  const response = await GET(new Request("https://pms.contract.test/api/pms", { headers: forged }));
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get("cache-control"), /no-store/);
+  const write = await POST(new Request("https://pms.contract.test/api/pms", { method: "POST", headers: { ...forged, "content-type": "application/json" }, body: JSON.stringify({ action: "createProperty", payload: { name: "Forged property" } }) }));
+  assert.equal(write.status, 401);
+  assert.equal(server.calls.length, 0);
+});
+
+test("unverified, expired and unavailable provider sessions cannot reach property storage", async () => {
+  const data = { user: { id: actor.userId, email: actor.email, name: actor.displayName, emailVerified: false }, session: { id: "unverified-session", userId: actor.userId, expiresAt: new Date(Date.now() + 3600000).toISOString() } };
+  for (const [result, status] of [
+    [{ data, error: null }, 403],
+    [{ data: { ...data, user: { ...data.user, emailVerified: true }, session: { ...data.session, expiresAt: "2000-01-01T00:00:00Z" } }, error: null }, 401],
+    [{ data: null, error: { code: "NETWORK_TIMEOUT", message: "provider unavailable" } }, 503],
+    [{ data: { ...data, user: { ...data.user, emailVerified: true }, session: { ...data.session, userId: "different-user" } }, error: null }, 503],
+  ]) {
+    reset(); auth.setResult(result);
+    assert.equal((await GET(new Request("https://pms.contract.test/api/pms"))).status, status);
+    assert.equal((await post({ action: "createProperty", payload: { name: "Blocked property" } })).status, status);
+    assert.equal(server.calls.length, 0, "no hotel records are read or changed after failed identity verification");
+  }
+});
+
+test("verified provider identity supplies the actor independently of request headers", async () => {
+  reset();
+  const response = await GET(new Request("https://pms.contract.test/api/pms", { headers: { "oai-authenticated-user-id": "attacker", "oai-authenticated-user-email": "attacker@contract.test" } }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(server.calls[0], { kind: "read", actor: { userId: actor.userId, email: actor.email, name: actor.displayName }, propertyId: undefined });
+  assert.deepEqual(auth.sessionOptions, { query: { disableCookieCache: "true" } }, "hotel access revalidates with Neon rather than accepting a revoked cookie-cache identity");
+});
+
 test("local API enforces identity, property isolation, origin checks and optimistic concurrency", { skip: !base }, async () => {
   const url = new URL(base);
   assert.ok(url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname), "API acceptance tests run only against a local preview");
@@ -121,12 +168,8 @@ test("local API enforces identity, property isolation, origin checks and optimis
   assert.equal(unauthenticated.status, 401, "anonymous users cannot read hotel records");
   assert.match(unauthenticated.headers.get("cache-control") ?? "", /no-store/);
 
-  let cookie = process.env.PMS_QA_COOKIE;
-  if (!cookie) {
-    const signin = await fetch(new URL("/signin-with-chatgpt?return_to=/", url), { redirect: "manual" });
-    cookie = signin.headers.getSetCookie().map((item) => item.split(";")[0]).join("; ");
-  }
-  assert.ok(cookie, "local preview sign-in must provide a cookie (or set PMS_QA_COOKIE)");
+  const cookie = process.env.PMS_QA_COOKIE;
+  assert.ok(cookie, "set PMS_QA_COOKIE from an explicitly authenticated local Neon test session; no mock sign-in is available");
 
   const request = async (body, origin = url.origin) => {
     const response = await fetch(endpoint, {

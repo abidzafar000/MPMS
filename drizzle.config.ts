@@ -1,7 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 
+// drizzle/ is archived SQLite history; PostgreSQL uses a distinct journal.
 export default defineConfig({
-  out: "./drizzle",
+  out: "./migrations/postgres",
   schema: "./db/schema.ts",
-  dialect: "sqlite",
+  dialect: "postgresql",
 });

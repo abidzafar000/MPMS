@@ -2,13 +2,13 @@
 
 Property management for Pakistani hotels and guesthouses: bookings, reception, housekeeping, payments, staff, cashier shifts and pricing. Amounts are stored as integer paisa; human dates and times use Asia/Karachi.
 
-This repository contains the current application source and automated tests. The existing [live portal](https://mehmaan-pms-pakistan.abidzafar000.chatgpt.site/) remains hosted through Sites. Uploading this source to GitHub does not move the live database or configure automatic deployment.
+This checkout runs on Next.js with Neon PostgreSQL and managed Neon Auth. The [original Sites portal](https://mehmaan-pms-pakistan.abidzafar000.chatgpt.site/) is separate. Its hotel records and ChatGPT identities have **not** been imported into the new database.
 
 ## Using the portal
 
-Open the portal and use **Login / account** (`/login`) to sign in with ChatGPT. Create an empty property for a real hotel, or explicitly choose a sample property to explore. Add room types, rooms and optional rate plans, then create a reservation. Open a cashier shift before collecting cash.
+Open **Login / account** (`/login`), create an email/password account and verify your email. Existing accounts can log in, request verification codes, reset passwords and log out. Email delivery depends on the configured Neon Auth email service; verify delivery before giving staff access.
 
-Hosted access currently remains owner-private. App staff membership and platform visitor access are separate: adding a staff record does not invite that person or grant access to the hosted Site.
+Create an empty property for a real hotel, or explicitly choose a sample property to explore. Add room types, rooms and optional rate plans, then create a reservation. Open a cashier shift before collecting cash. To add staff, the property owner adds their verified email under **Staff & assignments**. Creating an account alone does not grant access to an existing property.
 
 ## Included workflows
 
@@ -27,30 +27,48 @@ Hosted access currently remains owner-private. App staff membership and platform
 
 ## Local development
 
-Requires **Node.js >=22.13** and **pnpm 11.25.0**. Start in the repository root:
+Requires **Node.js >=22.13** and **pnpm 11.25.0**. Use a dedicated development Neon database and Auth configuration, separate from production. Set the variables listed in `.env.example` in an ignored `.env.local` file:
+
+- `DATABASE_URL`: development PostgreSQL connection string.
+- `NEON_AUTH_BASE_URL`: the matching development Neon Auth URL.
+- `NEON_AUTH_COOKIE_SECRET`: a random server-only secret of at least 32 characters, distinct from production.
+
+For a linked Vercel project, `vercel env pull .env.local --environment=development` retrieves its development settings. Register the actual local origin (normally `http://localhost:3000`) in Neon Auth's trusted domains. Never put credentials in `NEXT_PUBLIC_` variables or commit environment files.
+
+Start in the repository root:
 
 ```powershell
 pnpm install --frozen-lockfile
+pnpm db:migrate --apply
 pnpm test
 pnpm typecheck
 pnpm build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_lame_orphan.sql
 pnpm dev
 ```
 
-Apply the initial SQL only once to a fresh local database. Later schema changes require appended migrations. Follow the loopback URL printed by the development server.
+`pnpm dev` runs Next.js development; `pnpm start` serves an already-built application. Follow the URL printed by the server. There is no mock sign-in or local D1 service. See [QA.md](QA.md) for opt-in database and authenticated API checks.
 
-A clean clone defaults to the portable execution profile. Development provides an explicit local mock identity; production builds do not include mock sign-in. `pnpm start` runs the built application in local Wrangler, not a production deployment. The hosted identity flow requires the Sites environment.
+## Vercel deployment
 
-Local workerd startup failed with native error `0xc0000005` on the original Windows host. The automated in-memory suites and production build passed, but local D1/runtime verification was not completed there. See [QA.md](QA.md) for coverage and limitations.
+Use the Next.js preset and the repository root. Configure the three required variables above for each deployment environment. Production and testing must use separate database/Auth targets and cookie secrets. Register the exact deployed origin in its corresponding Neon Auth trusted domains.
+
+The Vercel build command applies migrations before compiling:
+
+```text
+node scripts/migrate-db.mjs --apply && pnpm build
+```
+
+Migrations live in `migrations/postgres/`. The runner serializes concurrent migration attempts, applies pending SQL transactionally and records SHA-256 checksums. Append new migrations; never edit an applied file. The historical SQLite files in `drizzle/` are not PostgreSQL migrations and must not be applied to Neon. Schema changes must remain compatible with the running release because migration runs before deployment promotion.
+
+A successful build does not prove email delivery, login or hotel workflows. Complete the checks in [QA.md](QA.md) before using a deployment for real hotel records.
 
 ## Architecture and hosting
 
-React/Vinext serves the interface. `/api/pms` authenticates and authorizes mutations. Cloudflare D1 stores versioned property aggregates with atomic compare-and-swap mutations and a transactional membership index. A stale update returns HTTP 409 instead of overwriting newer work. Browser storage is not the authoritative hotel database.
+Next.js App Router serves the interface. `/api/auth/*` proxies managed Neon Auth, while `/api/pms` derives the user from a server-validated session and requires verified email. Browser-supplied Sites identity headers are not trusted. Every property request checks current staff membership and filters records by permission.
 
-The tracked `.openai/hosting.json` retains the existing Site identifier and D1 binding. That identifier is deployment metadata, not a credential. This repository contains neither production database records nor deployment credentials. Sites supplies hosted authentication, storage bindings and its publication/migration workflow. Static GitHub Pages alone cannot run this backend. Moving to another host requires authentication and database deployment work.
+PostgreSQL stores versioned property aggregates as text to preserve immutable snapshot serialization. Mutations lock the property, recheck authorization/version and update the aggregate and membership index within one transaction. Stale writes return HTTP 409. Browser storage is not the authoritative hotel database.
 
-No GitHub Actions or automatic deployment pipeline is configured. Pushing to this repository does not update the live portal. Keep runtime configuration and credentials in ignored files or server-side secrets; do not commit database exports.
+This repository contains no production hotel records or deployment credentials. Moving existing Sites records requires a separate private import and explicit mapping of old staff identities to verified Neon accounts. Do not clear stored user IDs or grant an existing property to the first person who signs up. Vercel deployments do not update the original Sites portal.
 
 The current small-property design bounds each aggregate at 850,000 characters, with up to 20 owner properties and 50 staff per property. Larger workloads, extensive history or several independent cashier drawers may require a normalized data model. A scheduled external disaster-recovery service is not included.
 
@@ -60,4 +78,4 @@ Confirm WooDoo versus ZaK, API eligibility, identifiers, mappings and inventory/
 
 ## Source provenance
 
-Imported on 18 October 2026 from the existing PMS release at source commit `ec29e91e519f5f35b8b61fb1f60b59ce3864dbb1`. GitHub starts with a clean source snapshot; earlier Sites repository history is not imported. Application files, dependencies, migrations, tests and existing vendored license notices are preserved. README, QA notes and ignore rules are updated for this checkout.
+Imported on 18 October 2026 from the Sites PMS release at commit `ec29e91e519f5f35b8b61fb1f60b59ce3864dbb1`. Earlier Sites repository history and live records were not imported. The Vercel migration replaces Vinext/Cloudflare D1/Sites authentication with Next.js/PostgreSQL/Neon Auth while retaining the PMS workflows and original test history.

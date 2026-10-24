@@ -1,6 +1,16 @@
 packages:
   - .
 allowBuilds:
+  core-js: false
   esbuild: true
   sharp: true
-  workerd: true
+
+# Match the versions pinned by Neon Auth 0.6.0-beta.
+overrides:
+  "@better-auth/core": 1.7.6
+  "@better-auth/api-key": 1.7.6
+  "@better-auth/api-key>better-call": 1.4.0
+packageExtensions:
+  "@better-auth/api-key@1.7.6":
+    dependencies:
+      better-call: 1.4.0

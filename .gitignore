@@ -42,15 +42,6 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 
-# Maintained Vite plugin and worker sources.
-!/build/
-/build/*
-!/build/connector-preview-plugin.mjs
-!/build/connector-preview-worker.mjs
-!/build/sites-vite-plugin.LICENSE
-!/build/sites-vite-plugin.ts
-!/build/sites-worker.ts
-
 /dist/
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.
@@ -60,3 +51,5 @@ next-env.d.ts
 /outputs/
 /work/
 *.tsbuildinfo
+
+!.env.example
